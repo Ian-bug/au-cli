@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-var reSafePath = regexp.MustCompile(`^[\w\-./ ]+$`)
+var reSafePath = regexp.MustCompile(`^[^\x00-\x1f\x7f]+$`)
 
 // bufWrapper wraps a byte slice to enforce size limits
 type bufWrapper struct {
