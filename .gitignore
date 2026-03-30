@@ -1,2 +1,3 @@
 au
 *.env
+dist/
