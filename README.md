@@ -11,25 +11,51 @@ The terminal AI coding CLI space has a Node.js problem. OpenCode freezes. Claude
 
 `au` is a single statically-linked Go binary. No Node.js. No npm. No runtime. It starts in under 50ms, uses ~8 MB of RAM at idle, and gives you a full agentic coding loop — read files, write files, run commands, iterate — on the smallest VPS you can rent. It connects to any OpenAI-compatible API, so you pick the model and the cost.
 
-## Install (Linux)
+## Install
+
+### Linux
 
 One-liner — downloads the binary, makes it executable, moves it to your PATH:
 
 ```sh
-curl -fsSL https://github.com/cfpy67/au-cli/releases/download/v0.1.0-alpha/au-linux-amd64 -o au && chmod +x au && sudo mv au /usr/local/bin/au
+curl -fsSL https://github.com/cfpy67/au-cli/releases/download/v0.2.0-alpha/au-linux-amd64 -o au && chmod +x au && sudo mv au /usr/local/bin/au
 ```
 
 For ARM64 (Raspberry Pi, Ampere VPS):
 
 ```sh
-curl -fsSL https://github.com/cfpy67/au-cli/releases/download/v0.1.0-alpha/au-linux-arm64 -o au && chmod +x au && sudo mv au /usr/local/bin/au
+curl -fsSL https://github.com/cfpy67/au-cli/releases/download/v0.2.0-alpha/au-linux-arm64 -o au && chmod +x au && sudo mv au /usr/local/bin/au
 ```
 
-Then just run:
+Then just run `au`.
+
+### macOS
+
+Intel:
 
 ```sh
+curl -fsSL https://github.com/cfpy67/au-cli/releases/download/v0.2.0-alpha/au-darwin-amd64 -o au && chmod +x au && sudo mv au /usr/local/bin/au
+```
+
+Apple Silicon (M1/M2/M3):
+
+```sh
+curl -fsSL https://github.com/cfpy67/au-cli/releases/download/v0.2.0-alpha/au-darwin-arm64 -o au && chmod +x au && sudo mv au /usr/local/bin/au
+```
+
+Then just run `au`.
+
+### Windows
+
+Download [`au-windows-amd64.exe`](https://github.com/cfpy67/au-cli/releases/download/v0.2.0-alpha/au-windows-amd64.exe), rename it to `au.exe`, and place it somewhere on your `PATH` (e.g. `C:\Windows\System32` or any folder in your user PATH).
+
+Then open PowerShell or Windows Terminal and run:
+
+```powershell
 au
 ```
+
+ANSI colors are enabled automatically. Shell commands run via `powershell.exe -NoProfile -NonInteractive`.
 
 ## Build from source
 
