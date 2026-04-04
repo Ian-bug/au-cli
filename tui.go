@@ -23,6 +23,8 @@ var cmdList = []cmdDef{
 	{"/models", "list models from current provider"},
 	{"/providers", "list all providers"},
 	{"/thinking", "set reasoning depth 0-10 — /thinking <n>"},
+	{"/skills", "list available agent skills"},
+	{"/skill", "activate a skill — /skill <name>"},
 	{"/update", "check for updates and install if available"},
 	{"/reset", "clear conversation context"},
 	{"/help", "show available commands"},

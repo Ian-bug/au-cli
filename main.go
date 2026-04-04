@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -554,7 +555,9 @@ func main() {
 	enableVT()
 	st := loadStore()
 	cfg := loadConfig(st)
-	msgs := []Message{{Role: "system", Content: buildSystemPrompt()}}
+	skills := discoverSkills()
+	msgs := []Message{{Role: "system", Content: buildSystemPrompt(skills)}}
+	activatedSkills := make(map[string]bool)
 
 	ui = newTUI()
 	ui.setHistory(st.History)
@@ -583,6 +586,9 @@ func main() {
 	fmt.Printf("   model   %s\n", cfg.Model)
 	fmt.Printf("   url     %s\n", cfg.BaseURL)
 	fmt.Printf("   config  %s\n", configPath())
+	if len(skills) > 0 {
+		fmt.Printf("   skills  %d available\n", len(skills))
+	}
 	fmt.Println()
 
 	firstRunSetup(&cfg)
@@ -608,7 +614,8 @@ func main() {
 			os.Exit(0)
 
 		case input == "/reset":
-			msgs = []Message{{Role: "system", Content: buildSystemPrompt()}}
+			msgs = []Message{{Role: "system", Content: buildSystemPrompt(skills)}}
+			activatedSkills = make(map[string]bool)
 			fmt.Println("  context cleared")
 
 		case input == "/connect":
@@ -626,6 +633,42 @@ func main() {
 
 		case input == "/update":
 			updateCmd()
+
+		case input == "/skills":
+			if len(skills) == 0 {
+				fmt.Println("  no skills found")
+				fmt.Printf("  install skills in ~/.agents/skills/ or ./.agents/skills/\n")
+			} else {
+				fmt.Println()
+				for _, s := range skills {
+					active := ""
+					if activatedSkills[s.Name] {
+						active = "  \033[32m●\033[0m"
+					}
+					fmt.Printf("  \033[1m%-28s\033[0m  \033[2m%s\033[0m%s\n", s.Name, s.Description, active)
+				}
+				fmt.Println()
+			}
+
+		case strings.HasPrefix(input, "/skill "):
+			name := strings.TrimSpace(input[7:])
+			sk := findSkill(skills, name)
+			if sk == nil {
+				fmt.Printf("  skill %q not found — /skills to list available\n", name)
+			} else if activatedSkills[sk.Name] {
+				fmt.Printf("  skill %s already active\n", sk.Name)
+			} else {
+				body, err := loadSkillBody(sk.Location)
+				if err != nil {
+					fmt.Printf("  \033[31merror loading skill:\033[0m %v\n", err)
+				} else {
+					skillDir := filepath.Dir(sk.Location)
+					content := fmt.Sprintf("<skill_content name=%q>\n%s\n\nSkill directory: %s\nRelative paths in this skill are relative to the skill directory.\n</skill_content>", sk.Name, body, skillDir)
+					msgs = append(msgs, Message{Role: "system", Content: content})
+					activatedSkills[sk.Name] = true
+					fmt.Printf("  \033[32m●\033[0m  skill \033[1m%s\033[0m activated\n", sk.Name)
+				}
+			}
 
 		case input == "/help":
 			fmt.Println()
@@ -769,17 +812,21 @@ func main() {
 	}
 }
 
-func buildSystemPrompt() string {
+func buildSystemPrompt(skills []Skill) string {
 	cwd, _ := os.Getwd()
 	shell := "sh (bash/zsh)"
 	if runtime.GOOS == "windows" {
 		shell = "powershell"
 	}
-	return "You are a coding assistant with full filesystem access. " +
+	base := "You are a coding assistant with full filesystem access. " +
 		"Use tools to read files, write code, run commands, and complete tasks. " +
 		"Working directory: " + cwd + ". " +
 		"Shell: " + shell + ". " +
 		"Respond in plain text. No markdown tables, no markdown headers, no bullet formatting. " +
 		"Only use code blocks (triple backtick) when showing actual code snippets inline. " +
 		"When writing code to disk, use write_file instead."
+	if agentsMD := loadAgentsMD(); agentsMD != "" {
+		base += "\n\n" + agentsMD
+	}
+	return base + buildSkillCatalog(skills)
 }
