@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -120,7 +121,7 @@ func loadSkillBody(path string) (string, error) {
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(io.LimitReader(f, maxAgentsMDSize))
 	// Skip frontmatter
 	if !scanner.Scan() || strings.TrimSpace(scanner.Text()) != "---" {
 		// No frontmatter — return whole file
@@ -192,8 +193,13 @@ func loadAgentsMD() string {
 
 	// User-level
 	if home, err := os.UserHomeDir(); err == nil {
-		if data, err := os.ReadFile(filepath.Join(home, ".agents", "AGENTS.md")); err == nil {
-			parts = append(parts, strings.TrimSpace(string(data)))
+		path := filepath.Join(home, ".agents", "AGENTS.md")
+		if f, err := os.Open(path); err == nil {
+			data, _ := io.ReadAll(io.LimitReader(f, maxAgentsMDSize))
+			f.Close()
+			if len(data) > 0 {
+				parts = append(parts, strings.TrimSpace(string(data)))
+			}
 		}
 	}
 
@@ -210,8 +216,13 @@ func loadAgentsMD() string {
 
 	for _, dir := range dirs {
 		path := filepath.Join(dir, "AGENTS.md")
-		data, err := os.ReadFile(path)
+		f, err := os.Open(path)
 		if err != nil {
+			continue
+		}
+		data, _ := io.ReadAll(io.LimitReader(f, maxAgentsMDSize))
+		f.Close()
+		if len(data) == 0 {
 			continue
 		}
 		parts = append(parts, strings.TrimSpace(string(data)))

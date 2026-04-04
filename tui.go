@@ -299,6 +299,9 @@ func (t *TUI) ReadLine() string {
 			t.selIdx = -1
 			if result != "" {
 				t.history = append(t.history, result)
+				if len(t.history) > 500 {
+					t.history = t.history[len(t.history)-500:]
+				}
 				t.histPos = len(t.history)
 			}
 			return result

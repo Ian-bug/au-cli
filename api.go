@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -15,16 +16,20 @@ const (
 	maxContextTokens = 128000
 	maxHistoryLength = 100
 	maxToolOutput    = 50000
+	maxFileRead      = 1 * 1024 * 1024 // 1 MB cap for read_file tool
+	maxErrorBody     = 4 * 1024        // 4 KB cap for HTTP error response bodies
+	maxAgentsMDSize  = 64 * 1024       // 64 KB cap per AGENTS.md / SKILL.md file
+	maxToolIter      = 20              // max tool-call loop iterations per turn
 )
 
 var httpClient = &http.Client{
-	Timeout: 60 * time.Second,
 	Transport: &http.Transport{
-		TLSClientConfig:    &tls.Config{InsecureSkipVerify: false},
-		MaxIdleConns:       10,
-		IdleConnTimeout:    30 * time.Second,
-		DisableCompression: true,
-		MaxConnsPerHost:    5,
+		TLSClientConfig:     &tls.Config{InsecureSkipVerify: false},
+		MaxIdleConns:        10,
+		IdleConnTimeout:     30 * time.Second,
+		DisableCompression:  true,
+		MaxConnsPerHost:     5,
+		ResponseHeaderTimeout: 30 * time.Second,
 	},
 }
 
@@ -110,7 +115,7 @@ func complete(cfg Config, msgs []Message, tools []Tool, onFirstToken func(), onT
 		return "", nil, err
 	}
 
-	req, err := http.NewRequest("POST", cfg.BaseURL+"/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequest("POST", cfg.BaseURL+"/chat/completions", nil)
 	if err != nil {
 		return "", nil, err
 	}
@@ -118,10 +123,12 @@ func complete(cfg Config, msgs []Message, tools []Tool, onFirstToken func(), onT
 	req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 	req.Header.Set("User-Agent", "au/alpha")
 
-	// Retry logic with exponential backoff
+	// Retry logic with exponential backoff; reset body each attempt so retries send full payload
 	var resp *http.Response
 	var httpErr error
 	for attempt := 0; attempt < 3; attempt++ {
+		req.Body = io.NopCloser(bytes.NewReader(body))
+		req.ContentLength = int64(len(body))
 		resp, httpErr = httpClient.Do(req)
 		if httpErr == nil {
 			break
@@ -137,7 +144,7 @@ func complete(cfg Config, msgs []Message, tools []Tool, onFirstToken func(), onT
 
 	if resp.StatusCode != http.StatusOK {
 		var buf bytes.Buffer
-		buf.ReadFrom(resp.Body)
+		buf.ReadFrom(io.LimitReader(resp.Body, maxErrorBody))
 		errMsg := buf.String()
 		// Strip sensitive data from error message
 		errMsg = strings.ReplaceAll(errMsg, cfg.APIKey, "***REDACTED***")
@@ -265,7 +272,7 @@ func listModels(cfg Config) ([]string, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		var buf bytes.Buffer
-		buf.ReadFrom(resp.Body)
+		buf.ReadFrom(io.LimitReader(resp.Body, maxErrorBody))
 		errMsg := buf.String()
 		// Strip sensitive data from error message
 		errMsg = strings.ReplaceAll(errMsg, cfg.APIKey, "***REDACTED***")

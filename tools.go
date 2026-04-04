@@ -4,24 +4,29 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
 var reSafePath = regexp.MustCompile(`^[^\x00-\x1f\x7f]+$`)
 
-// bufWrapper wraps a byte slice to enforce size limits
+// bufWrapper wraps a byte slice to enforce size limits with concurrent-write safety
 type bufWrapper struct {
+	mu      *sync.Mutex
 	buf     *[]byte
 	maxSize int
 }
 
 func (w *bufWrapper) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	currentLen := len(*w.buf)
 	if currentLen >= w.maxSize {
 		return len(p), nil // Silently drop data over the limit
@@ -34,10 +39,7 @@ func (w *bufWrapper) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-var (
-	toolDefs    []Tool
-	rateLimiter = make(chan struct{}, 5) // Max 5 concurrent tool executions
-)
+var toolDefs []Tool
 
 func init() {
 	toolDefs = []Tool{
@@ -103,9 +105,6 @@ func init() {
 }
 
 func executeTool(name, argsJSON string) string {
-	// Rate limit tool execution
-	rateLimiter <- struct{}{}
-	defer func() { <-rateLimiter }()
 	switch name {
 	case "read_file":
 		var a struct {
@@ -122,11 +121,24 @@ func executeTool(name, argsJSON string) string {
 		if !reSafePath.MatchString(cleanPath) {
 			return "error: path contains invalid characters"
 		}
-		data, err := os.ReadFile(cleanPath)
+		f, err := os.Open(cleanPath)
 		if err != nil {
 			return "error: " + err.Error()
 		}
-		return string(data)
+		defer f.Close()
+		data, err := io.ReadAll(io.LimitReader(f, maxFileRead+1))
+		if err != nil {
+			return "error: " + err.Error()
+		}
+		truncated := len(data) > maxFileRead
+		if truncated {
+			data = data[:maxFileRead]
+		}
+		result := string(data)
+		if truncated {
+			result += fmt.Sprintf("\n[read_file: truncated at %d bytes]", maxFileRead)
+		}
+		return result
 
 	case "write_file":
 		var a struct {
@@ -188,8 +200,9 @@ func executeTool(name, argsJSON string) string {
 		// Stream output in chunks to handle large outputs
 		bufSize := 4096
 		out := make([]byte, 0, bufSize)
-		cmd.Stdout = &bufWrapper{buf: &out, maxSize: maxToolOutput}
-		cmd.Stderr = &bufWrapper{buf: &out, maxSize: maxToolOutput}
+		mu := &sync.Mutex{}
+		cmd.Stdout = &bufWrapper{mu: mu, buf: &out, maxSize: maxToolOutput}
+		cmd.Stderr = &bufWrapper{mu: mu, buf: &out, maxSize: maxToolOutput}
 		if err := cmd.Run(); err != nil {
 			result := string(out)
 			return fmt.Sprintf("error: %v\n%s", err, result)

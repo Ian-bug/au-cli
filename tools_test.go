@@ -136,12 +136,7 @@ func TestPowerShellExecution(t *testing.T) {
 }
 
 func TestRateLimiting(t *testing.T) {
-	// Verify rate limiter channel exists and has capacity
-	if cap(rateLimiter) == 0 {
-		t.Error("Rate limiter channel is not initialized")
-	}
-
-	// Test that concurrent executions respect the limit
+	// Test that concurrent tool executions all succeed
 	done := make(chan string, 10)
 	for i := 0; i < 10; i++ {
 		go func(id int) {

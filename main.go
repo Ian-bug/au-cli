@@ -566,10 +566,9 @@ func main() {
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sig
+		st.History = ui.history
+		st.save()
 		ui.Teardown()
-		if err := ui.restore(); err != nil {
-			fmt.Fprintf(os.Stderr, "error restoring terminal: %v\n", err)
-		}
 		fmt.Println()
 		os.Exit(0)
 	}()
@@ -610,6 +609,8 @@ func main() {
 
 		switch {
 		case input == "/q", input == "/quit", input == "/exit":
+			st.History = ui.history
+			st.save()
 			ui.Teardown()
 			os.Exit(0)
 
@@ -760,7 +761,15 @@ func main() {
 			displayUserMessage(input)
 			start := time.Now()
 
+			// Remember where msgs was before this turn for clean rollback on error.
+			preUserLen := len(msgs) - 1
+			toolIter := 0
 			for {
+				toolIter++
+				if toolIter > maxToolIter {
+					fmt.Fprintf(os.Stderr, "  \033[31merror\033[0m  tool-call loop exceeded %d iterations — use /reset if stuck\n", maxToolIter)
+					break
+				}
 				renderer := newLineRenderer()
 				stopSpinner := startSpinner()
 				content, toolCalls, err := complete(cfg, msgs, toolDefs,
@@ -776,8 +785,8 @@ func main() {
 					if strings.Contains(errMsg, "deadline exceeded") || strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "connection reset") {
 						fmt.Fprintf(os.Stderr, "  \033[2mtip: press ↑ to retry\033[0m\n")
 					}
-					// Remove the user message on error to prevent state corruption
-					msgs = msgs[:len(msgs)-1]
+					// Roll back all messages added during this turn (user msg + any tool exchanges).
+					msgs = msgs[:preUserLen]
 					break
 				}
 
@@ -803,6 +812,12 @@ func main() {
 						Content:    result,
 						ToolCallID: tc.ID,
 					})
+				}
+				// Trim history after tool results to prevent unbounded growth
+				if len(msgs) > maxHistoryLength {
+					newMsgs := []Message{msgs[0]}
+					newMsgs = append(newMsgs, msgs[len(msgs)-maxHistoryLength+1:]...)
+					msgs = newMsgs
 				}
 			}
 
