@@ -771,7 +771,11 @@ func main() {
 				renderer.Flush()
 
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "  \033[31merror\033[0m  %s\n", err)
+					errMsg := err.Error()
+					fmt.Fprintf(os.Stderr, "  \033[31merror\033[0m  %s\n", errMsg)
+					if strings.Contains(errMsg, "deadline exceeded") || strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "connection reset") {
+						fmt.Fprintf(os.Stderr, "  \033[2mtip: press ↑ to retry\033[0m\n")
+					}
 					// Remove the user message on error to prevent state corruption
 					msgs = msgs[:len(msgs)-1]
 					break

@@ -59,10 +59,12 @@ func (t *TUI) raw() bool {
 		return false
 	}
 	t.old = st
+	fmt.Print("\033[?2004h") // enable bracketed paste
 	return true
 }
 
 func (t *TUI) restore() error {
+	fmt.Print("\033[?2004l") // disable bracketed paste
 	if t.old != nil {
 		if err := term.Restore(t.fd, t.old); err != nil {
 			return err
@@ -333,6 +335,30 @@ func (t *TUI) ReadLine() string {
 
 		case n >= 3 && b[0] == 27 && b[1] == '[': // ESC [ sequences
 			ms := t.matches()
+
+			// Bracketed paste: \033[200~ ... content ... \033[201~
+			seq := string(b[:n])
+			if strings.HasPrefix(seq, "\033[200~") {
+				content := strings.TrimPrefix(seq, "\033[200~")
+				content = strings.TrimSuffix(content, "\033[201~")
+				// Replace newlines with spaces so the paste lands on one line
+				content = strings.ReplaceAll(content, "\r\n", " ")
+				content = strings.ReplaceAll(content, "\n", " ")
+				content = strings.ReplaceAll(content, "\r", " ")
+				runes := []rune(content)
+				var printable []rune
+				for _, r := range runes {
+					if r >= 32 {
+						printable = append(printable, r)
+					}
+				}
+				if len(printable) > 0 {
+					t.insertAt(printable)
+					t.selIdx = -1
+					t.redraw()
+				}
+				continue
+			}
 			switch {
 			case b[2] == 'A': // Up
 				if len(ms) > 0 {
@@ -407,10 +433,20 @@ func (t *TUI) ReadLine() string {
 			t.selIdx = -1
 			t.redraw()
 
-		case n > 1 && b[0] >= 0xC0: // multi-byte UTF-8
-			t.insertAt(bytes.Runes(b[:n]))
-			t.selIdx = -1
-			t.redraw()
+		case n > 1 && b[0] != 27: // paste or multi-byte UTF-8
+			// Decode as UTF-8; skip control chars (keep printable + non-ASCII)
+			runes := bytes.Runes(b[:n])
+			var printable []rune
+			for _, r := range runes {
+				if r >= 32 || r > 126 {
+					printable = append(printable, r)
+				}
+			}
+			if len(printable) > 0 {
+				t.insertAt(printable)
+				t.selIdx = -1
+				t.redraw()
+			}
 		}
 	}
 }
