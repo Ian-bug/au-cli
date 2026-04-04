@@ -366,6 +366,122 @@ func displayToolCall(tc ToolCallMsg) {
 			return
 		}
 		fmt.Printf("  \033[34m≡\033[0m  \033[2mls\033[0m      %s\n", a.Path)
+
+	case "patch_file":
+		var a struct {
+			Path   string `json:"path"`
+			OldStr string `json:"old_str"`
+			NewStr string `json:"new_str"`
+		}
+		if err := json.Unmarshal([]byte(tc.Function.Arguments), &a); err != nil {
+			fmt.Printf("  \033[31merror: failed to parse tool call\033[0m\n")
+			return
+		}
+		fmt.Printf("  \033[33m≈\033[0m  \033[2mpatch\033[0m   \033[1m%s\033[0m\n", a.Path)
+		oldPreview := strings.ReplaceAll(a.OldStr, "\n", "↵")
+		newPreview := strings.ReplaceAll(a.NewStr, "\n", "↵")
+		if len(oldPreview) > 72 {
+			oldPreview = oldPreview[:72] + "…"
+		}
+		if len(newPreview) > 72 {
+			newPreview = newPreview[:72] + "…"
+		}
+		fmt.Printf("  \033[2m┆\033[0m  \033[31m- %s\033[0m\n", oldPreview)
+		fmt.Printf("  \033[2m┆\033[0m  \033[32m+ %s\033[0m\n", newPreview)
+		fmt.Println()
+
+	case "append_file":
+		var a struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+		}
+		if err := json.Unmarshal([]byte(tc.Function.Arguments), &a); err != nil {
+			fmt.Printf("  \033[31merror: failed to parse tool call\033[0m\n")
+			return
+		}
+		fmt.Printf("  \033[32m+\033[0m  \033[2mappend\033[0m  \033[1m%s\033[0m\n", a.Path)
+
+	case "delete_file":
+		var a struct {
+			Path string `json:"path"`
+		}
+		if err := json.Unmarshal([]byte(tc.Function.Arguments), &a); err != nil {
+			fmt.Printf("  \033[31merror: failed to parse tool call\033[0m\n")
+			return
+		}
+		fmt.Printf("  \033[31m✕\033[0m  \033[2mdelete\033[0m  %s\n", a.Path)
+
+	case "move_file":
+		var a struct {
+			Src string `json:"src"`
+			Dst string `json:"dst"`
+		}
+		if err := json.Unmarshal([]byte(tc.Function.Arguments), &a); err != nil {
+			fmt.Printf("  \033[31merror: failed to parse tool call\033[0m\n")
+			return
+		}
+		fmt.Printf("  \033[33m→\033[0m  \033[2mmove\033[0m    %s → %s\n", a.Src, a.Dst)
+
+	case "search_files":
+		var a struct {
+			Pattern string `json:"pattern"`
+			Path    string `json:"path"`
+			Glob    string `json:"glob"`
+		}
+		if err := json.Unmarshal([]byte(tc.Function.Arguments), &a); err != nil {
+			fmt.Printf("  \033[31merror: failed to parse tool call\033[0m\n")
+			return
+		}
+		searchIn := a.Path
+		if searchIn == "" {
+			searchIn = "."
+		}
+		if a.Glob != "" {
+			fmt.Printf("  \033[35m/\033[0m  \033[2msearch\033[0m  %q  \033[2min %s (%s)\033[0m\n", a.Pattern, searchIn, a.Glob)
+		} else {
+			fmt.Printf("  \033[35m/\033[0m  \033[2msearch\033[0m  %q  \033[2min %s\033[0m\n", a.Pattern, searchIn)
+		}
+
+	case "add_todo":
+		var a struct {
+			Title string `json:"title"`
+		}
+		if err := json.Unmarshal([]byte(tc.Function.Arguments), &a); err != nil {
+			fmt.Printf("  \033[31merror: failed to parse tool call\033[0m\n")
+			return
+		}
+		fmt.Printf("  \033[36m☐\033[0m  \033[2mtodo\033[0m    %s\n", a.Title)
+
+	case "list_todos":
+		fmt.Printf("  \033[36m☐\033[0m  \033[2mtodos\033[0m\n")
+
+	case "update_todo":
+		var a struct {
+			ID     int    `json:"id"`
+			Status string `json:"status"`
+		}
+		if err := json.Unmarshal([]byte(tc.Function.Arguments), &a); err != nil {
+			fmt.Printf("  \033[31merror: failed to parse tool call\033[0m\n")
+			return
+		}
+		switch a.Status {
+		case "done":
+			fmt.Printf("  \033[32m✓\033[0m  \033[2mtodo\033[0m    #%d → done\n", a.ID)
+		case "in_progress":
+			fmt.Printf("  \033[33m◐\033[0m  \033[2mtodo\033[0m    #%d → in progress\n", a.ID)
+		default:
+			fmt.Printf("  \033[36m☐\033[0m  \033[2mtodo\033[0m    #%d → %s\n", a.ID, a.Status)
+		}
+
+	case "remove_todo":
+		var a struct {
+			ID int `json:"id"`
+		}
+		if err := json.Unmarshal([]byte(tc.Function.Arguments), &a); err != nil {
+			fmt.Printf("  \033[31merror: failed to parse tool call\033[0m\n")
+			return
+		}
+		fmt.Printf("  \033[31m✕\033[0m  \033[2mtodo\033[0m    #%d removed\n", a.ID)
 	}
 }
 
@@ -410,6 +526,44 @@ func displayToolResult(tc ToolCallMsg, result string) {
 				} else {
 					fmt.Printf("  %s\n", line)
 				}
+			}
+		}
+		fmt.Println()
+
+	case "search_files":
+		if result == "" || result == "no matches found" {
+			fmt.Printf("  \033[2mno matches\033[0m\n\n")
+			return
+		}
+		lines := strings.Split(strings.TrimRight(result, "\n"), "\n")
+		limit := 30
+		show := lines
+		hidden := 0
+		if len(lines) > limit {
+			show = lines[:limit]
+			hidden = len(lines) - limit
+		}
+		for _, line := range show {
+			fmt.Printf("  \033[2m│\033[0m  %s\n", line)
+		}
+		if hidden > 0 {
+			fmt.Printf("  \033[2m│  ... %d more lines\033[0m\n", hidden)
+		}
+		fmt.Println()
+
+	case "list_todos":
+		if result == "" || result == "no todos" {
+			fmt.Printf("  \033[2mno todos\033[0m\n\n")
+			return
+		}
+		lines := strings.Split(strings.TrimRight(result, "\n"), "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "done") {
+				fmt.Printf("  \033[32m│\033[0m  \033[2m%s\033[0m\n", line)
+			} else if strings.Contains(line, "in_progress") {
+				fmt.Printf("  \033[33m│\033[0m  %s\n", line)
+			} else {
+				fmt.Printf("  \033[2m│  %s\033[0m\n", line)
 			}
 		}
 		fmt.Println()
@@ -841,6 +995,11 @@ func buildSystemPrompt(skills []Skill) string {
 		"Use tools to read files, write code, run commands, and complete tasks. " +
 		"Working directory: " + cwd + ". " +
 		"Shell: " + shell + ". " +
+		"Prefer dedicated file tools over shell commands for file operations: " +
+		"use search_files instead of grep/find, patch_file for targeted edits instead of read+write, " +
+		"delete_file instead of rm, move_file instead of mv, append_file instead of echo >>. " +
+		"For tasks with multiple steps, use add_todo at the start to list all steps, " +
+		"then update_todo (in_progress/done) as you work through them. " +
 		"Respond in plain text. No markdown tables, no markdown headers, no bullet formatting. " +
 		"Only use code blocks (triple backtick) when showing actual code snippets inline. " +
 		"When writing code to disk, use write_file instead."
